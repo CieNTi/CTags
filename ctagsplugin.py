@@ -925,7 +925,7 @@ class GetAllCTagsList():
 class CTagsAutoComplete(sublime_plugin.EventListener):
     def on_query_completions(self, view, prefix, locations):
         if setting('autocomplete'):
-            prefix = prefix.strip().lower()
+            prefix = prefix.strip()
 
             # Check if .tags files need to be parsed again
             if not (GetAllCTagsList.ctags_list):
@@ -984,7 +984,7 @@ class CTagsAutoComplete(sublime_plugin.EventListener):
                             for single_arg in args_list:
                                 arg_count += 1
                                 completion = completion + '${' + str(arg_count) + ':' + single_arg.strip() + '}, '
-                            completion = completion.strip(', ') + ')\n\t{\n\t\t$0\n\t}'
+                            completion = completion.strip(', ') + ')$0'
                             ctag_type = ctag_type + ' f(' + str(arg_count) + ')'
                             ctag_name = ctag_name + '(' + str(arg_count) + ' args)'
 
@@ -996,15 +996,16 @@ class CTagsAutoComplete(sublime_plugin.EventListener):
 
             # Return results list
             results = [sublist for sublist in GetAllCTagsList.ctags_list
-                       if sublist[0].lower().startswith(prefix)]
+                       if sublist[0].lower().startswith(prefix.lower())]
 
+            # Extract views completions
             sub_results = [v.extract_completions(prefix)
                            for v in sublime.active_window().views()]
             sub_results = [(item, item) for sublist in sub_results
                            for item in sublist]  # flatten
 
             results = sorted(set(results).union(set(sub_results)))
-            return (results, sublime.INHIBIT_WORD_COMPLETIONS)
+            return (results)
 
 
 """Test CTags commands"""
