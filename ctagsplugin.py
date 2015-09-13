@@ -950,8 +950,11 @@ class CTagsAutoComplete(sublime_plugin.EventListener):
                         ctag_file = ctag_info[1]
                         ctag_decl_raw = ctag_info[2]
 
-                        # Each declaration matchs /^xxx$/
-                        ctag_decl = ctag_decl_raw[ctag_decl_raw.find('/^') + 2:ctag_decl_raw.find('$/') + 1]
+                        # Declaration matchs /^xxx$/ ?
+                        if '/^' in ctag_decl_raw:
+                            ctag_decl = ctag_decl_raw[ctag_decl_raw.find('/^') + 2:ctag_decl_raw.find('$/')]
+                        else:
+                            ctag_decl = ctag_decl_raw[0:ctag_decl_raw.find(';"')]
 
                         # Remove non 0x00..0x7F characters
                         ctag_decl = ''.join([i if ord(i) < 128 else '' for i in ctag_decl])
@@ -963,7 +966,10 @@ class CTagsAutoComplete(sublime_plugin.EventListener):
                         completion = ctag_name
 
                         # Something like function args?
-                        function_args = ctag_decl[ctag_decl.find('(') + 1:ctag_decl.find(')')]
+                        if '(' in ctag_decl and ')' in ctag_decl:
+                            function_args = ctag_decl[ctag_decl.find('(') + 1:ctag_decl.find(')')]
+                        else:
+                            function_args = ''
 
                         # They are really function args or variable?
                         if '=' in ctag_decl[ctag_decl.find(ctag_name) + 1:ctag_decl.find('(')]:
@@ -992,7 +998,12 @@ class CTagsAutoComplete(sublime_plugin.EventListener):
             results = [sublist for sublist in GetAllCTagsList.ctags_list
                        if sublist[0].lower().startswith(prefix)]
 
-            results = sorted(set(results))
+            sub_results = [v.extract_completions(prefix)
+                           for v in sublime.active_window().views()]
+            sub_results = [(item, item) for sublist in sub_results
+                           for item in sublist]  # flatten
+
+            results = sorted(set(results).union(set(sub_results)))
             return (results, sublime.INHIBIT_WORD_COMPLETIONS)
 
 
