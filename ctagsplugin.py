@@ -1,11 +1,10 @@
-"""
-A ctags plugin for Sublime Text 2/3.
-"""
+#!/usr/bin/env python
+
+"""A ctags plugin for Sublime Text 2/3"""
 
 import functools
 import codecs
 import locale
-import sys
 import os
 import pprint
 import re
@@ -21,25 +20,29 @@ try:
     import sublime
     import sublime_plugin
     from sublime import status_message, error_message
-
-    # hack the system path to prevent the following issue in ST3
-    #     ImportError: No module named 'ctags'
-    sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 except ImportError:  # running tests
+    import sys
+
     from tests.sublime_fake import sublime
     from tests.sublime_fake import sublime_plugin
 
     sys.modules['sublime'] = sublime
     sys.modules['sublime_plugin'] = sublime_plugin
 
-import ctags
-from ctags import (FILENAME, parse_tag_lines, PATH_ORDER, SYMBOL,
-                   TagElements, TagFile)
-from helpers.edit import Edit
+if sublime.version().startswith('2'):
+    import ctags
+    from ctags import (FILENAME, parse_tag_lines, PATH_ORDER, SYMBOL,
+                       TagElements, TagFile)
+    from helpers.edit import Edit
+else:  # safe to assume if not ST2 then ST3
+    from CTags import ctags
+    from CTags.ctags import (FILENAME, parse_tag_lines, PATH_ORDER, SYMBOL,
+                             TagElements, TagFile)
+    from CTags.helpers.edit import Edit
 
-#
-# Contants
-#
+"""
+Contants
+"""
 
 OBJECT_PUNCTUATORS = {
     'class': '.',
@@ -49,7 +52,7 @@ OBJECT_PUNCTUATORS = {
 
 ENTITY_SCOPE = 'entity.name.function, entity.name.type, meta.toc-list'
 
-RUBY_SPECIAL_ENDINGS = r'\?|!'
+RUBY_SPECIAL_ENDINGS = '\?|!'
 
 ON_LOAD = sublime_plugin.all_callbacks['on_load']
 
@@ -57,23 +60,23 @@ RE_SPECIAL_CHARS = re.compile(
     '(\\\\|\\*|\\+|\\?|\\||\\{|\\}|\\[|\\]|\\(|\\)|\\^|\\$|\\.|\\#|\\ )')
 
 
-#
-# Functions
-#
+"""
+Functions
+"""
 
-# Helper functions
+"""Helper functions"""
+
 
 def get_settings():
-    """
-    Load settings.
+    """Load settings.
 
     :returns: dictionary containing settings
     """
     return sublime.load_settings("CTags.sublime-settings")
 
+
 def get_setting(key, default=None):
-    """
-    Load individual setting.
+    """Load individual setting.
 
     :param key: setting key to get value for
     :param default: default value to return if no value found
@@ -84,8 +87,10 @@ def get_setting(key, default=None):
 
 setting = get_setting
 
+
 def escape_regex(s):
     return RE_SPECIAL_CHARS.sub(lambda m: '\\%s' % m.group(1), s)
+
 
 def select(view, region):
     sel_set = view.sel()
@@ -93,12 +98,14 @@ def select(view, region):
     sel_set.add(region)
     sublime.set_timeout(functools.partial(view.show_at_center, region), 1)
 
+
 def in_main(f):
     @functools.wraps(f)
     def done_in_main(*args, **kw):
         sublime.set_timeout(functools.partial(f, *args, **kw), 0)
 
     return done_in_main
+
 
 # TODO: allow thread per tag file. That makes more sense.
 def threaded(finish=None, msg='Thread already running'):
@@ -134,9 +141,9 @@ def threaded(finish=None, msg='Thread already running'):
 
     return decorator
 
+
 def on_load(path=None, window=None, encoded_row_col=True, begin_edit=False):
-    """
-    Decorator to open or switch to a file.
+    """Decorator to open or switch to a file.
 
     Opens and calls the "decorated function" for the file specified by path,
     or the current file if no path is specified. In the case of the former, if
@@ -172,6 +179,7 @@ def on_load(path=None, window=None, encoded_row_col=True, begin_edit=False):
 
         # if buffer is still loading, wait for it to complete then proceed
         if view.is_loading():
+
             class set_on_load():
                 callbacks = ON_LOAD
 
@@ -198,9 +206,9 @@ def on_load(path=None, window=None, encoded_row_col=True, begin_edit=False):
 
     return wrapper
 
+
 def find_tags_relative_to(path, tag_file):
-    """
-    Find the tagfile relative to a file path.
+    """Find the tagfile relative to a file path.
 
     :param path: path to a file
     :param tag_file: name of tag file
@@ -222,9 +230,9 @@ def find_tags_relative_to(path, tag_file):
 
     return None
 
+
 def get_alternate_tags_paths(view, tags_file):
-    """
-    Search for additional tag files.
+    """Search for additional tag files.
 
     Search for additional tag files to use, including those define by a
     ``search_paths`` file, the ``extra_tag_path`` setting and the
@@ -272,14 +280,14 @@ def get_alternate_tags_paths(view, tags_file):
 
     # use list instead of set  for keep order
     ret = []
-    for path in search_paths:
-        if path and (path not in ret) and os.path.exists(path):
-            ret.append(path)
+    for p in search_paths:
+        if p and (p not in ret) and os.path.exists(p):
+            ret.append(p)
     return ret
 
+
 def get_common_ancestor_folder(path, folders):
-    """
-    Get common ancestor for a file and a list of folders.
+    """Get common ancestor for a file and a list of folders.
 
     :param path: path to file
     :param folders: list of folder paths
@@ -300,14 +308,16 @@ def get_common_ancestor_folder(path, folders):
 
     return path  # return the root directory
 
-# Scrolling functions
+
+"""Scrolling functions"""
+
 
 def find_with_scope(view, pattern, scope, start_pos=0, cond=True, flags=0):
     max_pos = view.size()
+
     while start_pos < max_pos:
-        estrs = pattern.split(r'\ufffd')
-        if(len(estrs)>1):
-            pattern = estrs[0]
+        estrs = pattern.split('\ufffd')
+        if(len(estrs)>1):pattern = estrs[0]
         f = view.find(pattern, start_pos, flags)
 
         if not f or view.match_selector(f.begin(), scope) is cond:
@@ -317,9 +327,11 @@ def find_with_scope(view, pattern, scope, start_pos=0, cond=True, flags=0):
 
     return f
 
+
 def find_source(view, pattern, start_at, flags=sublime.LITERAL):
     return find_with_scope(view, pattern, 'string',
                            start_at, False, flags)
+
 
 def follow_tag_path(view, tag_path, pattern):
     regions = [sublime.Region(0, 0)]
@@ -345,6 +357,7 @@ def follow_tag_path(view, tag_path, pattern):
         view.add_regions('tag_path', regions, 'comment', '', 1)
 
     return pattern_region.begin() - 1 if pattern_region else None
+
 
 def scroll_to_tag(view, tag, hook=None):
     @on_load(os.path.join(tag.root_dir, tag.filename))
@@ -376,18 +389,19 @@ def scroll_to_tag(view, tag, hook=None):
         if hook:
             hook(view)
 
-# Formatting helper functions
+
+"""Formatting helper functions"""
+
 
 def format_tag_for_quickopen(tag, show_path=True):
-    """
-    Format a tag for use in quickopen panel.
+    """Format a tag for use in quickopen panel.
 
     :param tag: tag to display in quickopen
     :param show_path: show path to file containing tag in quickopen
 
     :returns: formatted tag
     """
-    format_ = []
+    format = []
     tag = ctags.TagElements(tag)
     f = ''
 
@@ -397,17 +411,17 @@ def format_tag_for_quickopen(tag, show_path=True):
             f += string.Template(
                 '    %($field)s$punct%(symbol)s').substitute(locals())
 
-    format_ = [f % tag if f else tag.symbol, tag.ex_command]
-    format_[1] = format_[1].strip()
+    format = [f % tag if f else tag.symbol, tag.ex_command]
+    format[1] = format[1].strip()
 
     if show_path:
-        format_.insert(1, tag.filename)
+        format.insert(1, tag.filename)
 
-    return format_
+    return format
+
 
 def prepare_for_quickpanel(formatter=format_tag_for_quickopen):
-    """
-    Prepare list of matching ctags for the quickpanel.
+    """Prepare list of matching ctags for the quickpanel.
 
     :param formatter: formatter function to apply to tag
 
@@ -424,11 +438,12 @@ def prepare_for_quickpanel(formatter=format_tag_for_quickopen):
 
     return compile_lists
 
-# File collection helper functions
+
+"""File collection helper functions"""
+
 
 def get_rel_path_to_source(path, tag_file, multiple=True):
-    """
-    Get relative path from tag_file to source file.
+    """Get relative path from tag_file to source file.
 
     :param path: path to a source file
     :param tag_file: path to a tag file
@@ -447,26 +462,26 @@ def get_rel_path_to_source(path, tag_file, multiple=True):
 
 
 def get_current_file_suffix(path):
-    """
-    Get file extension
+    """Get file extension
 
     :param path: path to a source file
 
     :returns: file extension for file
     """
-    _, file_suffix = os.path.splitext(path)
+    file_prefix, file_suffix = os.path.splitext(path)
 
     return file_suffix
 
-#
-# Sublime Commands
-#
 
-# JumpPrev Commands
+"""
+Sublime Commands
+"""
+
+"""JumpPrev Commands"""
+
 
 class JumpPrev(sublime_plugin.WindowCommand):
-    """
-    Provide ``jump_back`` command.
+    """Provide ``jump_back`` command.
 
     Command "jumps back" to the previous code point before a tag was navigated
     or "jumped" to.
@@ -490,24 +505,25 @@ class JumpPrev(sublime_plugin.WindowCommand):
         file_name, sel = self.buf.pop()
         self.jump(file_name, sel)
 
-    def jump(self, path, sel):
-        @on_load(path, begin_edit=True)
+    def jump(self, fn, sel):
+        @on_load(fn, begin_edit=True)
         def and_then(view):
             select(view, sel)
 
     @classmethod
     def append(cls, view):
         """Append a code point to the list"""
-        name = view.file_name()
-        if name:
+        fn = view.file_name()
+        if fn:
             sel = [s for s in view.sel()][0]
-            cls.buf.append((name, sel))
+            cls.buf.append((fn, sel))
 
-# CTags commands
+
+"""CTags commands"""
+
 
 def show_build_panel(view):
-    """
-    Handle build ctags command.
+    """Handle build ctags command.
 
     Allows user to select whether tags should be built for the current file,
     a given directory or all open directories.
@@ -548,9 +564,9 @@ def show_build_panel(view):
 
     view.window().show_quick_panel(display, on_select)
 
+
 def show_tag_panel(view, result, jump_directly):
-    """
-    Handle tag navigation command.
+    """Handle tag navigation command.
 
     Jump directly to a tag entry, or show a quick panel with a list of
     matching tags
@@ -574,13 +590,13 @@ def show_tag_panel(view, result, jump_directly):
         else:
             view.window().show_quick_panel(display, on_select)
 
+
 def ctags_goto_command(jump_directly=False):
-    """
-    Decorator to goto a ctag entry.
+    """Decorator to goto a ctag entry.
 
     Allow jump to a ctags entry, directly or otherwise
     """
-    def wrapper(func):
+    def wrapper(f):
         def command(self, edit, **args):
             view = self.view
             tags_file = find_tags_relative_to(
@@ -590,22 +606,20 @@ def ctags_goto_command(jump_directly=False):
                 status_message('Can\'t find any relevant tags file')
                 return
 
-            result = func(self, self.view, args, tags_file)
+            result = f(self, self.view, args, tags_file)
             show_tag_panel(self.view, result, jump_directly)
 
         return command
     return wrapper
 
+
 def check_if_building(self, **args):
-    """
-    Check if ctags are currently being built.
-    """
+    """Check if ctags are currently being built"""
     if RebuildTags.build_ctags.func.running:
-        status_message('Tags not available until built')
-        if setting('display_rebuilding_message'):
-            error_message('Please wait while tags are built')
+        error_message('Please wait while tags are built')
         return False
     return True
+
 
 def compile_filters(view):
     filters = []
@@ -615,6 +629,7 @@ def compile_filters(view):
             filters.append(regexes)
     return filters
 
+
 def compile_definition_filters(view):
     filters = []
     for selector, regexes in list(setting('definition_filters', {}).items()):
@@ -623,12 +638,12 @@ def compile_definition_filters(view):
             filters.append(regexes)
     return filters
 
-# Goto definition under cursor commands
+
+"""Goto definition under cursor commands"""
+
 
 class JumpToDefinition:
-    """
-    Provider for NavigateToDefinition and SearchForDefinition commands.
-    """
+    """Provider for NavigateToDefinition and SearchForDefinition commands"""
     @staticmethod
     def run(symbol, view, tags_file):
         tags = {}
@@ -644,9 +659,6 @@ class JumpToDefinition:
 
         def_filters = compile_definition_filters(view)
 
-		
-        fname_abs = view.file_name() if not(view.file_name() is None) else None
-		
         def pass_def_filter(o):
             for f in def_filters:
                 for k, v in list(f.items()):
@@ -655,27 +667,19 @@ class JumpToDefinition:
                             return False
             return True
 
-        def eq_filename(rel_path):
-            if fname_abs is None or rel_path is None:
-                return False
-				
-            if rel_path.startswith("."):
-               rel_path = rel_path[1:]		
-            return fname_abs.endswith(rel_path)
-			
         @prepare_for_quickpanel()
         def sorted_tags():
             p_tags = list(filter(pass_def_filter, tags.get(symbol, [])))
             if not p_tags:
                 status_message('Can\'t find "%s"' % symbol)
-            p_tags = sorted(p_tags, key=lambda tag: '' if eq_filename(tag.tag_path[0]) else tag.tag_path[0])
+            p_tags = sorted(p_tags, key=iget('tag_path'))
             return p_tags
 
         return sorted_tags
 
+
 class NavigateToDefinition(sublime_plugin.TextCommand):
-    """
-    Provider for the ``navigate_to_definition`` command.
+    """Provider for the ``navigate_to_definition`` command.
 
     Command navigates to the definition for a symbol in the open file(s) or
     folder(s).
@@ -705,9 +709,9 @@ class NavigateToDefinition(sublime_plugin.TextCommand):
 
         return JumpToDefinition.run(symbol, view, tags_file)
 
+
 class SearchForDefinition(sublime_plugin.WindowCommand):
-    """
-    Provider for the ``search_for_definition`` command.
+    """Provider for the ``search_for_definition`` command.
 
     Command searches for definition for a symbol in the open file(s) or
     folder(s).
@@ -739,13 +743,14 @@ class SearchForDefinition(sublime_plugin.WindowCommand):
     def on_cancel(self):
         pass
 
-# Show Symbol commands
+
+"""Show Symbol commands"""
 
 tags_cache = defaultdict(dict)
 
+
 class ShowSymbols(sublime_plugin.TextCommand):
-    """
-    Provider for the ``show_symbols`` command.
+    """Provider for the ``show_symbols`` command.
 
     Command shows all symbols for the open file(s) or folder(s).
     """
@@ -817,11 +822,12 @@ class ShowSymbols(sublime_plugin.TextCommand):
 
         return sorted_tags
 
-# Rebuild CTags commands
+
+"""Rebuild CTags commands"""
+
 
 class RebuildTags(sublime_plugin.TextCommand):
-    """
-    Provider for the ``rebuild_tags`` command.
+    """Provider for the ``rebuild_tags`` command.
 
     Command (re)builds tag files for the open file(s) or folder(s), reading
     relevant settings from the settings file.
@@ -852,8 +858,7 @@ class RebuildTags(sublime_plugin.TextCommand):
 
     @threaded(msg='Already running CTags!')
     def build_ctags(self, paths, command, tag_file, recursive, opts):
-        """
-        Build tags for the open file or folder(s).
+        """Build tags for the open file or folder(s)
 
         :param paths: paths to build ctags for
         :param command: ctags command
@@ -905,63 +910,94 @@ class RebuildTags(sublime_plugin.TextCommand):
 
         GetAllCTagsList.ctags_list = []  # clear the cached ctags list
 
-# Autocomplete commands
+
+"""Autocomplete commands"""
+
 
 class GetAllCTagsList():
-    """
-    Cache all the ctags list.
-    """
     ctags_list = []
 
+    """cache all the ctags list"""
     def __init__(self, list):
         self.ctags_list = list
+
 
 class CTagsAutoComplete(sublime_plugin.EventListener):
     def on_query_completions(self, view, prefix, locations):
         if setting('autocomplete'):
             prefix = prefix.strip().lower()
-            tags_path = view.window().folders()[0] + '/' + setting('tag_file')
 
-            sub_results = [v.extract_completions(prefix)
-                           for v in sublime.active_window().views()]
-            sub_results = [(item, item) for sublist in sub_results
-                           for item in sublist]  # flatten
-
-            if GetAllCTagsList.ctags_list:
-                results = [sublist for sublist in GetAllCTagsList.ctags_list
-                           if sublist[0].lower().startswith(prefix)]
-                results = sorted(set(results).union(set(sub_results)))
-
-                return results
-            else:
+            # Check if .tags files need to be parsed again
+            if not (GetAllCTagsList.ctags_list):
                 tags = []
 
-                # check if a project is open and the tags file exists
-                if not (view.window().folders() and os.path.exists(tags_path)):
-                    return tags
+                tags_path_list = view.window().folders()
+                for tags_path in tags_path_list:
+                    tags_path = tags_path + '/' + setting('tag_file')
 
-                if sublime.platform() == "windows":
-                    prefix = ""
-                else:
-                    prefix = "\\"
+                    # check if a project is open and the tags file exists
+                    if not (tags_path_list and os.path.exists(tags_path)):
+                        # Check next folder
+                        break
 
-                f = os.popen("awk \"{ print "+prefix+"$1 }\" \"" + tags_path + "\"")
+                    f = open (tags_path, 'r')
+                    for i in f.readlines():
+                        ctag_info = i.split ('\t')
+                        # Avoid ctags info lines
+                        if (ctag_info[0].startswith('!')):
+                            continue
+                        ctag_name = ctag_info[0]
+                        ctag_file = ctag_info[1]
+                        ctag_decl_raw = ctag_info[2]
 
-                for i in f.readlines():
-                    tags.append([i.strip()])
+                        # Each declaration matchs /^xxx$/
+                        ctag_decl = ctag_decl_raw[ctag_decl_raw.find('/^') + 2:ctag_decl_raw.find('$/') + 1]
 
-                tags = [(item, item) for sublist in tags
-                        for item in sublist]  # flatten
-                tags = sorted(set(tags))  # make unique
+                        # Remove non 0x00..0x7F characters
+                        ctag_decl = ''.join([i if ord(i) < 128 else '' for i in ctag_decl])
+
+                        # Build all variables
+                        ctag_type = ctag_decl[0:ctag_decl.find(ctag_name) - 1].strip()
+
+                        # Completiong build
+                        completion = ctag_name
+
+                        # Something like function args?
+                        function_args = ctag_decl[ctag_decl.find('(') + 1:ctag_decl.find(')')]
+
+                        # They are really function args or variable?
+                        if '=' in ctag_decl[ctag_decl.find(ctag_name) + 1:ctag_decl.find('(')]:
+                            function_args = ''
+
+                        # Go!
+                        if function_args:
+                            # Build tabbed arguments
+                            completion = completion + ' ('
+                            args_list = function_args.split(',')
+                            arg_count = 0
+                            for single_arg in args_list:
+                                arg_count += 1
+                                completion = completion + '${' + str(arg_count) + ':' + single_arg.strip() + '}, '
+                            completion = completion.strip(', ') + ')\n\t{\n\t\t$0\n\t}'
+                            ctag_type = ctag_type + ' f(' + str(arg_count) + ')'
+                            ctag_name = ctag_name + '(' + str(arg_count) + ' args)'
+
+                        # Finally add the new tag
+                        tags.append ((ctag_name + '\t' + ctag_type, completion))
+
+                # Finished all files, save to main variable
                 GetAllCTagsList.ctags_list = tags
-                results = [sublist for sublist in GetAllCTagsList.ctags_list
-                           if sublist[0].lower().startswith(prefix)]
-                results = list(set(results).union(set(sub_results)))
-                results.sort()
 
-                return results
+            # Return results list
+            results = [sublist for sublist in GetAllCTagsList.ctags_list
+                       if sublist[0].lower().startswith(prefix)]
 
-# Test CTags commands
+            results = sorted(set(results))
+            return (results, sublime.INHIBIT_WORD_COMPLETIONS)
+
+
+"""Test CTags commands"""
+
 
 class TestCtags(sublime_plugin.TextCommand):
     routine = None
